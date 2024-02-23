@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  database:
+    image: mysql:latest
+    restart: unless-stopped
+    ports:
+      - '3306:3306'
+    env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
+      MYSQL_DATABASE: '${MYSQL_DATABASE}'
+      MYSQL_USER: '${MYSQL_USER}'
+      MYSQL_PASSWORD: '${MYSQL_PASSWORD}'
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - wordpress-network
+    deploy:
+      resources:
+        limits:
+          memory: 2048m
+
+  phpmyadmin:
+    depends_on:
+      - database
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    ports:
+      - '9006:80'
+    env_file: .env
+    environment:
+      PMA_HOST: database
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
+    networks:
+      - wordpress-network
+
+  wordpress:
+    depends_on:
+      - database
+    image: wordpress:php8.1
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    env_file: .env
+    environment:
+      WORDPRESS_DB_HOST: database:3306 # use the same name as database service
+      WORDPRESS_DB_NAME: '${MYSQL_DATABASE}'
+      WORDPRESS_DB_USER: '${MYSQL_USER}'
+      WORDPRESS_DB_PASSWORD: '${MYSQL_PASSWORD}'
+    volumes:
+      - ./wordpress:/var/www/html/
+      - './conf/php-local.ini:/usr/local/etc/php/conf.d/local.ini'
+    networks:
+      - wordpress-network
+
+  node:
+    restart: 'no'
+    image: node:latest
+    container_name: nodejs
+    depends_on:
+      - wordpress
+    volumes:
+      - node-data:/usr/src/app
+    ports:
+      - '3000:3000'
+      - '3001:3001'
+
+  wpcli:
+    container_name: site-cli
+    depends_on:
+      - database
+      - wordpress
+    image: wordpress:cli
+    user: 1000:1000
+    command: tail -f /dev/null
+    volumes:
+      - type: bind
+        source: ./wordpress
+        target: /var/www/html
+      - './conf/php-local.ini:/usr/local/etc/php/conf.d/local.ini'
+    networks:
+      - wordpress-network
+    environment:
+      WORDPRESS_DB_HOST: database:3306
+      WORDPRESS_DB_USER: '${MYSQL_USER}'
+      WORDPRESS_DB_PASSWORD: '${MYSQL_PASSWORD}'
+      WORDPRESS_DB_NAME: '${MYSQL_DATABASE}'
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_TABLE_PREFIX: wp_
+      WORDPRESS_CONFIG_EXTRA: |
+        define('FS_METHOD', 'direct');
+
+volumes:
+  db-data:
+  node-data:
+
+networks:
+  wordpress-network:
+    driver: bridge  
